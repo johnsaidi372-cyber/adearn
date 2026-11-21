@@ -88,7 +88,7 @@ To reset all data, delete `server/data/db.json` and restart the server.
 1. Create a GitHub repository and upload the project files (exclude `node_modules/`, `dist/`, and `server/data/`).
 2. Sign in to https://dashboard.render.com with your account.
 3. Click **New → Blueprint**, choose the repository, and Render will read `render.yaml`.
-4. Deploy. Render builds with `npm install && npm run build` and starts with `npm start`.
+4. Deploy. Render builds with `npm install --include=dev && npm run build` (dev dependencies are needed for Vite/Tailwind) and starts with `npm start`.
 5. Your permanent URL will be `https://adearn.onrender.com` (or similar).
 
 Notes:
