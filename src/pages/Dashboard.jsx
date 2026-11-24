@@ -17,7 +17,7 @@ import StatCard from '../components/StatCard'
 import TransactionList from '../components/TransactionList'
 import { coins as fmtCoins, toUsd, usd } from '../lib/format'
 
-const MIN_CASHOUT = 500
+const MIN_CASHOUT = 1000
 
 export default function Dashboard() {
   const { user } = useAuth()
