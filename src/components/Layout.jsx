@@ -10,6 +10,7 @@ import {
   Menu,
   PlayCircle,
   Search,
+  ShieldCheck,
   User as UserIcon,
   Wallet,
   X,
@@ -31,11 +32,14 @@ const PAGE_META = {
   '/history': { title: 'Transaction history', subtitle: 'Every coin earned and every cashout.' },
   '/withdraw': { title: 'Withdraw', subtitle: 'Turn your coins into real money.' },
   '/profile': { title: 'Profile', subtitle: 'Your account details and settings.' },
+  '/admin': { title: 'Admin', subtitle: 'Monitor all accounts and withdrawal requests.' },
 }
 
 function SidebarContent({ onNavigate }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const navItems =
+    user?.role === 'admin' ? [...NAV, { to: '/admin', label: 'Admin', icon: ShieldCheck }] : NAV
 
   return (
     <div className="flex h-full flex-col bg-ink text-slate-300">
@@ -50,7 +54,7 @@ function SidebarContent({ onNavigate }) {
       </div>
 
       <nav className="mt-2 flex-1 space-y-1 px-3">
-        {NAV.map(({ to, label, icon: Icon }) => (
+        {navItems.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
