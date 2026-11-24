@@ -110,6 +110,12 @@ To enable sandbox payouts, set these environment variables (never commit them):
 
 Users open **PayPal payouts** in the sidebar once verified. Admins set KYC status from the Admin → Users table.
 
+## Durable storage (Postgres)
+
+`server/postgres.js` writes the full application state to Postgres whenever `DATABASE_URL` is set. The JSON file remains a local cache and fallback if the database is unavailable. `render.yaml` provisions a free Render Postgres instance and wires its connection string into the web service automatically.
+
+For a production money-handling app, use a paid Postgres plan with backups and point-in-time recovery, and replace the write-through cache with normalized tables and transactions (see `docs/REAL_MONEY_ARCHITECTURE.md`).
+
 ## Deploying to Render (permanent URL)
 
 `render.yaml` is included as a Render Blueprint.
