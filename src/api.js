@@ -50,4 +50,13 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ status }),
     }),
+  payoutConfig: () => request('/payouts/config'),
+  payouts: () => request('/payouts'),
+  requestPayout: (payload) =>
+    request('/payouts/request', { method: 'POST', body: JSON.stringify(payload) }),
+  adminSetKyc: (id, status) =>
+    request(`/admin/users/${id}/kyc`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
 }
