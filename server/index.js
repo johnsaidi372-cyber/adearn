@@ -3,11 +3,15 @@ const cors = require('cors')
 const path = require('path')
 const fs = require('fs')
 const { read, write, ensure, uid, hashPassword, makeSalt } = require('./db')
+const ledger = require('./ledger')
+const paypal = require('./paypal')
 
 ensure()
 
 const app = express()
 app.use(cors())
+// PayPal signs the raw request body; register this route before the JSON parser.
+app.use('/api/webhooks/paypal', express.raw({ type: '*/*' }))
 app.use(express.json())
 
 const USD_PER_COIN = 0.01
@@ -149,6 +153,7 @@ function publicUser(user) {
     createdAt: user.createdAt,
     verificationFeePaid: !!user.verificationFeePaid,
     role: user.role || 'user',
+    kycStatus: user.kycStatus || 'none',
   }
 }
 
@@ -207,8 +212,10 @@ app.post('/api/auth/register', (req, res) => {
     token: uid('t'),
     createdAt: new Date().toISOString(),
     verificationFeePaid: false,
+    kycStatus: 'none',
   }
   db.users.push(user)
+  ledger.apply(db, user.id, 50, 'bonus', user.id, 'Welcome bonus')
   db.transactions.unshift({
     id: uid('tx'),
     userId: user.id,
@@ -280,7 +287,8 @@ app.post('/api/ads/complete', auth, (req, res) => {
   const ad = ADS.find((a) => a.id === session.adId)
   session.completed = true
   const user = db.users.find((u) => u.id === req.user.id)
-  user.coins += ad.reward
+  const newBalance = ledger.apply(db, user.id, ad.reward, 'ad_reward', session.id, `Watched ${ad.brand} ad`)
+  user.coins = newBalance
   db.transactions.unshift({
     id: uid('tx'),
     userId: user.id,
@@ -323,7 +331,6 @@ app.post('/api/withdrawals', auth, (req, res) => {
         : `You need ${coins} coins for this withdrawal.`,
     })
   }
-  user.coins -= totalCoins
   const withdrawal = {
     id: uid('w'),
     userId: user.id,
@@ -335,7 +342,10 @@ app.post('/api/withdrawals', auth, (req, res) => {
     createdAt: new Date().toISOString(),
   }
   req.db.withdrawals.unshift(withdrawal)
+  ledger.apply(req.db, user.id, -coins, 'payout', withdrawal.id, `Withdrawal to ${method}`)
   if (feeApplies) {
+    ledger.apply(req.db, user.id, -VERIFICATION_FEE_COINS, 'fee', withdrawal.id, 'One-time verification fee')
+
     user.verificationFeePaid = true
     req.db.transactions.unshift({
       id: uid('tx'),
@@ -362,6 +372,146 @@ app.post('/api/withdrawals', auth, (req, res) => {
     coins: user.coins,
     feeCharged: feeApplies ? VERIFICATION_FEE_USD : 0,
   })
+})
+
+// --- PayPal payouts (sandbox only until compliance sign-off) ---
+
+const MIN_PAYOUT_USD = Math.max(MIN_WITHDRAWAL_USD, 10)
+const PAYOUT_HOLD_HOURS = 24
+
+app.get('/api/payouts/config', auth, (req, res) => {
+  res.json({
+    configured: paypal.configured(),
+    mode: 'sandbox',
+    minimumUsd: MIN_PAYOUT_USD,
+    holdHours: PAYOUT_HOLD_HOURS,
+    kycStatus: req.user.kycStatus,
+  })
+})
+
+app.get('/api/payouts', auth, (req, res) => {
+  res.json(req.db.payouts.filter((p) => p.userId === req.user.id))
+})
+
+app.post('/api/payouts/request', auth, async (req, res) => {
+  let db = req.db
+  try {
+    const email = String(req.body?.email || '').trim()
+    const amount = Number(req.body?.amount)
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'Enter a valid PayPal email address.' })
+    }
+    if (!Number.isFinite(amount) || amount < MIN_PAYOUT_USD) {
+      return res.status(400).json({ error: `Minimum payout is $${MIN_PAYOUT_USD.toFixed(2)}.` })
+    }
+    if (!paypal.configured()) {
+      return res.status(503).json({
+        error: 'PayPal payouts are not configured. Set PAYPAL_CLIENT_ID, PAYPAL_SECRET and PAYPAL_WEBHOOK_ID.',
+      })
+    }
+
+    const user = db.users.find((u) => u.id === req.user.id)
+    if (user.kycStatus !== 'verified') {
+      return res.status(403).json({ error: 'Identity verification is required before a payout.' })
+    }
+
+    const needed = Math.round(amount / USD_PER_COIN)
+    const available = ledger.availableFor(db, user.id, PAYOUT_HOLD_HOURS)
+    if (available < needed) {
+      return res.status(400).json({
+        error: `Only ${available} coins are available. Recent rewards are held for ${PAYOUT_HOLD_HOURS} hours.`,
+      })
+    }
+
+    const payout = {
+      id: uid('po'),
+      userId: user.id,
+      amount,
+      coins: needed,
+      email,
+      status: 'queued',
+      paypalBatchId: null,
+      paypalItemId: null,
+      createdAt: new Date().toISOString(),
+    }
+    db.payouts.unshift(payout)
+    ledger.apply(db, user.id, -needed, 'payout', payout.id, `PayPal payout to ${email}`)
+    write(db)
+
+    const createdAt = payout.createdAt
+    try {
+      const result = await paypal.createPayout({ payoutId: payout.id, amountUsd: amount, email })
+      const header = result.batch_header || {}
+      const item = (result.items || [])[0] || {}
+      payout.paypalBatchId = header.payout_batch_id || null
+      payout.paypalItemId = item.payout_item_id || null
+      payout.status = header.batch_status === 'SUCCESS' ? 'paid' : 'submitted'
+      payout.updatedAt = new Date().toISOString()
+      db.transactions.unshift({
+        id: uid('tx'),
+        userId: user.id,
+        type: 'withdraw',
+        coins: -needed,
+        usd: -amount,
+        description: `PayPal payout to ${email}`,
+        createdAt,
+      })
+      write(db)
+      return res.status(201).json({ payout })
+    } catch (err) {
+      payout.status = 'failed'
+      payout.error = err.message
+      payout.updatedAt = new Date().toISOString()
+      ledger.apply(db, user.id, needed, 'payout_reversal', payout.id, 'Refund: PayPal payout failed')
+      db.transactions.unshift({
+        id: uid('tx'),
+        userId: user.id,
+        type: 'adjustment',
+        coins: needed,
+        usd: amount,
+        description: 'Payout refund',
+        createdAt,
+      })
+      write(db)
+      return res.status(502).json({ error: `PayPal payout failed: ${err.message}` })
+    }
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'Payout request failed.' })
+  }
+})
+
+app.post('/api/webhooks/paypal', async (req, res) => {
+  const raw = req.body
+  const valid = await paypal.verifyWebhook(req.headers, raw).catch(() => false)
+  if (!valid) return res.status(400).json({ error: 'Invalid webhook signature.' })
+
+  let event
+  try {
+    event = JSON.parse(raw.toString('utf8'))
+  } catch {
+    return res.status(400).json({ error: 'Invalid webhook body.' })
+  }
+
+  const db = read()
+  const item = event.resource || {}
+  const payout = db.payouts.find(
+    (p) => p.payoutItemId === item.payout_item_id || p.id === item.payout_item?.sender_batch_id
+  )
+  if (!payout) return res.json({ received: true })
+
+  const type = event.event_type
+  if (type === 'PAYMENT.PAYOUTS-ITEM.SUCCEEDED') {
+    payout.status = 'paid'
+  } else if (type === 'PAYMENT.PAYOUTS-ITEM.FAILED') {
+    payout.status = 'failed'
+    ledger.apply(db, payout.userId, payout.coins, 'payout_reversal', payout.id, 'Refund: PayPal payout failed')
+  } else if (type === 'PAYMENT.PAYOUTS-ITEM.REVERSED') {
+    payout.status = 'reversed'
+    ledger.apply(db, payout.userId, payout.coins, 'payout_reversal', payout.id, 'Refund: PayPal payout reversed')
+  }
+  payout.updatedAt = new Date().toISOString()
+  write(db)
+  res.json({ received: true })
 })
 
 // --- Admin endpoints ---
@@ -427,6 +577,18 @@ app.patch('/api/admin/withdrawals/:id/status', auth, requireAdmin, (req, res) =>
   withdrawal.status = status
   write(req.db)
   res.json({ withdrawal })
+})
+
+app.patch('/api/admin/users/:id/kyc', auth, requireAdmin, (req, res) => {
+  const status = req.body?.status
+  if (!['none', 'pending', 'verified', 'rejected'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid KYC status.' })
+  }
+  const user = req.db.users.find((u) => u.id === req.params.id && u.role !== 'admin')
+  if (!user) return res.status(404).json({ error: 'User not found.' })
+  user.kycStatus = status
+  write(req.db)
+  res.json({ user: publicUser(user) })
 })
 
 // Serve the production build when it exists.
