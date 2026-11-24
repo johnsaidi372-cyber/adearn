@@ -7,6 +7,7 @@ import WatchAds from './pages/WatchAds'
 import History from './pages/History'
 import Withdraw from './pages/Withdraw'
 import Profile from './pages/Profile'
+import Admin from './pages/Admin'
 import { useAuth } from './context/AuthContext'
 
 function FullScreenLoader() {
@@ -35,6 +36,7 @@ export default function App() {
         <Route path="/history" element={<History />} />
         <Route path="/withdraw" element={<Withdraw />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/admin" element={user?.role === 'admin' ? <Admin /> : <Navigate to="/" replace />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
