@@ -110,6 +110,22 @@ To enable sandbox payouts, set these environment variables (never commit them):
 
 Users open **PayPal payouts** in the sidebar once verified. Admins set KYC status from the Admin → Users table.
 
+## Rewarded ads & identity verification
+
+Two provider adapters are included, both inactive until you supply credentials:
+
+**Ad network** (`server/adnetwork.js`)
+- `AD_NETWORK_PROVIDER=demo` (default) — local catalog, client timer, as before
+- Set `AD_NETWORK_PROVIDER=<name>` and `AD_NETWORK_SECRET=<shared secret>` to enable server-side verification
+- The network posts a signed callback to `POST /api/ads/verify`; only that callback credits the ledger. Clients poll `GET /api/ads/session/:id` and cannot self-credit.
+- Before launch, adapt `adnetwork.js` to your network's actual signature scheme (e.g. AdMob SSV public keys) and serve real creatives from the network SDK.
+
+**KYC** (`server/kyc.js`, Persona)
+- Set `KYC_API_KEY`, `KYC_TEMPLATE_ID`, `KYC_WEBHOOK_SECRET` (and optionally `KYC_BASE_URL` for a test environment)
+- Users click **Verify my identity** on the PayPal payouts page
+- Signed webhooks at `POST /api/kyc/webhook` update `kycStatus`
+- Admins can still set KYC status manually from Admin → Users
+
 ## Durable storage (Postgres)
 
 `server/postgres.js` writes the full application state to Postgres whenever `DATABASE_URL` is set. The JSON file remains a local cache and fallback if the database is unavailable. `render.yaml` provisions a free Render Postgres instance and wires its connection string into the web service automatically.
