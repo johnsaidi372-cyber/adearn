@@ -46,6 +46,13 @@ Vite proxies `/api` requests to the Express server, so everything works from the
 
 Or click **“Try the demo account”** on the login page. You can also register a new account; new users get 50 welcome coins.
 
+### Admin account
+
+- Email: `admin@adearn.com`
+- Password: `admin1234` (override with the `ADMIN_PASSWORD` environment variable)
+
+Sign in with this account to open the **Admin** page, where you can see every user's balance, earnings, ads watched, fee status, and activity, plus all withdrawal requests (which you can mark as paid or rejected).
+
 ## Production build
 
 ```bash
