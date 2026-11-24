@@ -63,6 +63,15 @@ export default function Admin() {
     }
   }
 
+  async function setKyc(id, status) {
+    try {
+      const data = await api.adminSetKyc(id, status)
+      setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, kycStatus: data.user.kycStatus } : u)))
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
   const stats = overview
     ? [
         { icon: Users, label: 'Users', value: fmtCoins(overview.users), tone: 'text-brand-600' },
@@ -129,6 +138,7 @@ export default function Admin() {
                       <th className="px-5 py-3 text-right font-semibold">Ads</th>
                       <th className="px-5 py-3 text-right font-semibold">Cashouts</th>
                       <th className="px-5 py-3 text-center font-semibold">Fee</th>
+                      <th className="px-5 py-3 text-center font-semibold">KYC</th>
                       <th className="px-5 py-3 text-right font-semibold">Activity</th>
                     </tr>
                   </thead>
@@ -147,6 +157,18 @@ export default function Admin() {
                           <span className={`chip ${u.verificationFeePaid ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
                             {u.verificationFeePaid ? 'Paid' : 'Not paid'}
                           </span>
+                        </td>
+                        <td className="px-5 py-4 text-center">
+                          <select
+                            value={u.kycStatus || 'none'}
+                            onChange={(e) => setKyc(u.id, e.target.value)}
+                            className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-700 outline-none"
+                          >
+                            <option value="none">None</option>
+                            <option value="pending">Pending</option>
+                            <option value="verified">Verified</option>
+                            <option value="rejected">Rejected</option>
+                          </select>
                         </td>
                         <td className="px-5 py-4 text-right">
                           <button onClick={() => openActivity(u.id)} className="text-xs font-bold text-brand-600 hover:text-brand-700">
