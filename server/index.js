@@ -11,7 +11,7 @@ app.use(cors())
 app.use(express.json())
 
 const USD_PER_COIN = 0.01
-const MIN_WITHDRAWAL_USD = 5
+const MIN_WITHDRAWAL_USD = 10
 // Where ad clicks land. JForce is Jumia's affiliate portal for Kenya.
 const AFFILIATE_URL = 'https://jforce.jumia.co.ke/affiliate'
 // One-time account verification fee, charged only on a user's first withdrawal.
