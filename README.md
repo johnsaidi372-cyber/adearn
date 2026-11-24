@@ -88,6 +88,28 @@ Edit constants at the top of `server/index.js`:
 
 To reset all data, delete `server/data/db.json` and restart the server.
 
+## PayPal payouts (sandbox only)
+
+A real payout flow is implemented in `server/paypal.js` and the `/api/payouts/*` endpoints, with:
+
+- an append-only ledger (`server/ledger.js`) — balances are derived from entries, with idempotency keys
+- KYC gating — only accounts marked `verified` by an admin can request a payout
+- a 24-hour hold on recent rewards before they become payout-eligible
+- PayPal Payouts API batch creation with `PayPal-Request-Id` idempotency
+- signed webhook verification via PayPal's verify-webhook-signature endpoint
+- automatic ledger reversal if a payout fails or is reversed
+
+**This build is sandbox-only.** Live credentials are rejected in code until legal/KYC/compliance sign-off is complete. See `docs/REAL_MONEY_ARCHITECTURE.md` for the full production design.
+
+To enable sandbox payouts, set these environment variables (never commit them):
+
+- `PAYPAL_CLIENT_ID`
+- `PAYPAL_SECRET`
+- `PAYPAL_WEBHOOK_ID`
+- `PAYPAL_MODE=sandbox` (default)
+
+Users open **PayPal payouts** in the sidebar once verified. Admins set KYC status from the Admin → Users table.
+
 ## Deploying to Render (permanent URL)
 
 `render.yaml` is included as a Render Blueprint.
