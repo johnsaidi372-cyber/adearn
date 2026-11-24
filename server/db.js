@@ -21,10 +21,27 @@ function daysAgo(n) {
   return new Date(Date.now() - n * 86400000).toISOString()
 }
 
+function adminUser() {
+  const salt = makeSalt()
+  return {
+    id: 'u_admin',
+    name: 'Administrator',
+    email: 'admin@adearn.com',
+    role: 'admin',
+    salt,
+    passwordHash: hashPassword(process.env.ADMIN_PASSWORD || 'admin1234', salt),
+    coins: 0,
+    token: 'admin-token',
+    createdAt: daysAgo(30),
+    verificationFeePaid: true,
+  }
+}
+
 function seed() {
   const salt = makeSalt()
   return {
     users: [
+      adminUser(),
       {
         id: 'u_demo',
         name: 'Alex Morgan',
@@ -64,15 +81,24 @@ function ensure() {
   if (!fs.existsSync(DB_PATH)) write(seed())
 }
 
+function ensureAdmin(data) {
+  if (!data.users.some((u) => u.role === 'admin')) {
+    data.users.push(adminUser())
+    write(data)
+  }
+}
+
 function read() {
   ensure()
+  let data
   try {
-    return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'))
+    data = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'))
   } catch {
-    const fresh = seed()
-    write(fresh)
-    return fresh
+    data = seed()
+    write(data)
   }
+  ensureAdmin(data)
+  return data
 }
 
 function write(data) {
