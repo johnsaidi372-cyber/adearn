@@ -5,6 +5,7 @@ const fs = require('fs')
 const { read, write, ensure, uid, hashPassword, makeSalt } = require('./db')
 const ledger = require('./ledger')
 const paypal = require('./paypal')
+const postgres = require('./postgres')
 
 ensure()
 
@@ -599,4 +600,26 @@ if (fs.existsSync(dist)) {
 }
 
 const PORT = process.env.PORT || 3001
-app.listen(PORT, () => console.log(`AdEarn API listening on http://localhost:${PORT}`))
+
+async function bootstrap() {
+  if (postgres.enabled()) {
+    try {
+      await postgres.init()
+      const remote = await postgres.load()
+      if (remote) {
+        write(remote)
+        console.log('Restored application state from Postgres')
+      } else {
+        postgres.setReady(true)
+        await postgres.save(read())
+        console.log('Initialized Postgres state from local store')
+      }
+    } catch (err) {
+      console.error('Postgres bootstrap failed; continuing with the local JSON store:', err.message)
+    }
+  }
+  postgres.setReady(true)
+  app.listen(PORT, () => console.log(`AdEarn API listening on http://localhost:${PORT}`))
+}
+
+bootstrap()
