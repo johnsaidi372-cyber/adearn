@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Loader2, ShieldCheck, Wallet } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ExternalLink, Loader2, ShieldCheck, Wallet } from 'lucide-react'
 import { api } from '../api'
 import { useAuth } from '../context/AuthContext'
 import { coins as fmtCoins, formatDate, toUsd, usd } from '../lib/format'
@@ -7,6 +7,7 @@ import { coins as fmtCoins, formatDate, toUsd, usd } from '../lib/format'
 export default function Payouts() {
   const { user, refresh } = useAuth()
   const [config, setConfig] = useState(null)
+  const [kycConfig, setKycConfig] = useState(null)
   const [payouts, setPayouts] = useState([])
   const [email, setEmail] = useState('')
   const [amount, setAmount] = useState('')
@@ -17,11 +18,12 @@ export default function Payouts() {
 
   useEffect(() => {
     let active = true
-    Promise.all([api.payoutConfig(), api.payouts()])
-      .then(([c, p]) => {
+    Promise.all([api.payoutConfig(), api.payouts(), api.kycConfig()])
+      .then(([c, p, k]) => {
         if (!active) return
         setConfig(c)
         setPayouts(p)
+        setKycConfig(k)
       })
       .catch((err) => active && setError(err.message))
       .finally(() => active && setLoading(false))
@@ -44,6 +46,20 @@ export default function Payouts() {
       setSuccess(`${usd(data.payout.amount)} payout submitted to ${data.payout.email}. Status: ${data.payout.status}.`)
       setAmount('')
       await refresh()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function startVerification() {
+    setError('')
+    setBusy(true)
+    try {
+      const data = await api.startKyc()
+      if (data.url) window.open(data.url, '_blank', 'noopener,noreferrer')
+      else setSuccess('Verification session created. Follow the instructions from the identity provider.')
     } catch (err) {
       setError(err.message)
     } finally {
@@ -100,8 +116,19 @@ export default function Payouts() {
             </div>
           )}
           {!verified && (
-            <div className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-xs font-medium text-amber-700">
-              Your identity must be verified before a payout can be sent. Ask an administrator to verify your account.
+            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <p className="text-xs font-semibold text-amber-800">
+                Your identity must be verified before a payout can be sent.
+              </p>
+              {kycConfig?.configured ? (
+                <button onClick={startVerification} disabled={busy} className="btn-ghost mt-3 w-full">
+                  <ShieldCheck className="h-4 w-4" /> Verify my identity <ExternalLink className="h-3.5 w-3.5" />
+                </button>
+              ) : (
+                <p className="mt-1 text-[11px] text-amber-700">
+                  The identity provider is not configured. An administrator can verify your account manually from the Admin page.
+                </p>
+              )}
             </div>
           )}
           {success && (
