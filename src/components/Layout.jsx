@@ -10,6 +10,7 @@ import {
   Menu,
   PlayCircle,
   Search,
+  Send,
   ShieldCheck,
   User as UserIcon,
   Wallet,
@@ -23,6 +24,7 @@ const NAV = [
   { to: '/watch', label: 'Watch ads', icon: PlayCircle },
   { to: '/history', label: 'History', icon: History },
   { to: '/withdraw', label: 'Withdraw', icon: Wallet },
+  { to: '/payouts', label: 'PayPal payouts', icon: Send },
   { to: '/profile', label: 'Profile', icon: UserIcon },
 ]
 
@@ -31,6 +33,7 @@ const PAGE_META = {
   '/watch': { title: 'Watch ads', subtitle: 'Pick an ad, watch it, and collect your reward.' },
   '/history': { title: 'Transaction history', subtitle: 'Every coin earned and every cashout.' },
   '/withdraw': { title: 'Withdraw', subtitle: 'Turn your coins into real money.' },
+  '/payouts': { title: 'PayPal payouts', subtitle: 'Sandbox payouts for verified accounts.' },
   '/profile': { title: 'Profile', subtitle: 'Your account details and settings.' },
   '/admin': { title: 'Admin', subtitle: 'Monitor all accounts and withdrawal requests.' },
 }
