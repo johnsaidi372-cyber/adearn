@@ -34,6 +34,7 @@ function adminUser() {
     token: 'admin-token',
     createdAt: daysAgo(30),
     verificationFeePaid: true,
+    kycStatus: 'verified',
   }
 }
 
@@ -51,8 +52,22 @@ function seed() {
         coins: 1240,
         token: 'demo-token',
         createdAt: daysAgo(30),
+        kycStatus: 'verified',
       },
     ],
+    ledger: [
+      {
+        id: 'le_seed',
+        userId: 'u_demo',
+        coins: 1240,
+        type: 'adjustment',
+        referenceId: null,
+        idempotencyKey: 'seed:demo-opening-balance',
+        description: 'Opening balance',
+        createdAt: daysAgo(30),
+      },
+    ],
+    payouts: [],
     adSessions: [],
     withdrawals: [
       {
@@ -88,6 +103,29 @@ function ensureAdmin(data) {
   }
 }
 
+function ensureCollections(data) {
+  let changed = false
+  if (!Array.isArray(data.ledger)) { data.ledger = []; changed = true }
+  if (!Array.isArray(data.payouts)) { data.payouts = []; changed = true }
+  for (const u of data.users) {
+    if (!u.kycStatus) { u.kycStatus = 'none'; changed = true }
+    if (data.ledger.length === 0 && u.coins > 0) {
+      data.ledger.push({
+        id: uid('le'),
+        userId: u.id,
+        coins: u.coins,
+        type: 'adjustment',
+        referenceId: null,
+        idempotencyKey: `migrate:${u.id}`,
+        description: 'Migrated opening balance',
+        createdAt: new Date().toISOString(),
+      })
+      changed = true
+    }
+  }
+  if (changed) write(data)
+}
+
 function read() {
   ensure()
   let data
@@ -98,6 +136,7 @@ function read() {
     write(data)
   }
   ensureAdmin(data)
+  ensureCollections(data)
   return data
 }
 
