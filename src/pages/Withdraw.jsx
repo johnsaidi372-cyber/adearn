@@ -15,7 +15,7 @@ import { api } from '../api'
 import { useAuth } from '../context/AuthContext'
 import { coins as fmtCoins, toUsd, usd } from '../lib/format'
 
-const MIN = 5
+const MIN = 10
 const VERIFICATION_FEE = 3
 const METHODS = [
   { id: 'PayPal', label: 'PayPal', hint: 'you@example.com' },
@@ -145,7 +145,7 @@ export default function Withdraw() {
                 </button>
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                {[5, 10, 20, 50].map((value) => (
+                {[10, 20, 50, 100].map((value) => (
                   <button
                     key={value}
                     type="button"
