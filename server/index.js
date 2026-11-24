@@ -364,7 +364,7 @@ app.post('/api/ads/verify', (req, res) => {
   res.json({ ok: true, credited: reward })
 })
 
-app.get('/api/kyc/config', auth, (_req, res) =>
+app.get('/api/kyc/config', auth, (req, res) =>
   res.json({ configured: kyc.configured(), status: req.user.kycStatus })
 )
 
