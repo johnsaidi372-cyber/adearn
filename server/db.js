@@ -1,6 +1,7 @@
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
+const postgres = require('./postgres')
 
 const DATA_DIR = path.join(__dirname, 'data')
 const DB_PATH = path.join(DATA_DIR, 'db.json')
@@ -143,8 +144,10 @@ function read() {
 function write(data) {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
   const tmp = `${DB_PATH}.tmp`
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2))
+  const contents = JSON.stringify(data, null, 2)
+  fs.writeFileSync(tmp, contents)
   fs.renameSync(tmp, DB_PATH)
+  postgres.save(data).catch((err) => console.error('Postgres sync failed:', err.message))
 }
 
 module.exports = { ensure, read, write, uid, hashPassword, makeSalt }
