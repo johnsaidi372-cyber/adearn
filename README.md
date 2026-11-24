@@ -82,7 +82,7 @@ Authenticated endpoints expect `Authorization: Bearer <token>`.
 Edit constants at the top of `server/index.js`:
 
 - `USD_PER_COIN` — conversion rate (default `0.01`, i.e. 100 coins = $1)
-- `MIN_WITHDRAWAL_USD` — minimum cashout (default $5)
+- `MIN_WITHDRAWAL_USD` — minimum cashout (default $10)
 - `ADS` — the demo ad catalog (brand, reward, duration, category, etc.)
 - `AFFILIATE_URL` — destination opened when an ad's call-to-action is clicked (default `https://jforce.jumia.co.ke/affiliate`, Jumia's JForce affiliate portal). Individual ads can override it with a `targetUrl` field.
 
