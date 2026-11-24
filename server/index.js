@@ -6,6 +6,8 @@ const { read, write, ensure, uid, hashPassword, makeSalt } = require('./db')
 const ledger = require('./ledger')
 const paypal = require('./paypal')
 const postgres = require('./postgres')
+const adnetwork = require('./adnetwork')
+const kyc = require('./kyc')
 
 ensure()
 
@@ -13,6 +15,7 @@ const app = express()
 app.use(cors())
 // PayPal signs the raw request body; register this route before the JSON parser.
 app.use('/api/webhooks/paypal', express.raw({ type: '*/*' }))
+app.use('/api/kyc/webhook', express.raw({ type: '*/*' }))
 app.use(express.json())
 
 const USD_PER_COIN = 0.01
@@ -267,10 +270,18 @@ app.post('/api/ads/start', auth, (req, res) => {
   }
   req.db.adSessions.push(session)
   write(req.db)
-  res.json({ sessionId: session.id, duration: ad.duration })
+  res.json({
+    sessionId: session.id,
+    duration: ad.duration,
+    verificationMode: adnetwork.mode(),
+    reward: ad.reward,
+  })
 })
 
 app.post('/api/ads/complete', auth, (req, res) => {
+  if (adnetwork.mode() === 'server') {
+    return res.status(403).json({ error: 'Rewards are credited only after the ad network verifies the impression.' })
+  }
   const db = req.db
   const session = db.adSessions.find(
     (s) => s.id === req.body?.sessionId && s.userId === req.user.id
@@ -302,6 +313,94 @@ app.post('/api/ads/complete', auth, (req, res) => {
   })
   write(db)
   res.json({ coins: user.coins, awarded: ad.reward })
+})
+
+app.get('/api/ads/config', auth, (_req, res) => res.json(adnetwork.info()))
+
+app.get('/api/ads/session/:id', auth, (req, res) => {
+  const session = req.db.adSessions.find((s) => s.id === req.params.id && s.userId === req.user.id)
+  if (!session) return res.status(404).json({ error: 'Ad session not found.' })
+  res.json({
+    status: session.completed ? 'verified' : 'pending',
+    reward: session.rewardAmount || 0,
+    credited: !!session.completed,
+  })
+})
+
+// Server-to-server reward callback from the ad network. This is the only path
+// that credits coins when a real provider is active.
+app.post('/api/ads/verify', (req, res) => {
+  if (adnetwork.mode() !== 'server') {
+    return res.status(400).json({ error: 'Server-side verification is not enabled.' })
+  }
+  const { sessionId, transactionId, rewardAmount, timestamp, signature } = req.body || {}
+  if (!adnetwork.verify({ sessionId, transactionId, rewardAmount, timestamp }, signature)) {
+    return res.status(401).json({ error: 'Invalid reward signature.' })
+  }
+  const db = read()
+  const session = db.adSessions.find((s) => s.id === sessionId)
+  if (!session) return res.status(404).json({ error: 'Ad session not found.' })
+  if (Date.now() - new Date(timestamp).getTime() > 10 * 60000) {
+    return res.status(400).json({ error: 'Stale reward callback.' })
+  }
+  if (session.completed) return res.json({ ok: true, alreadyCredited: true })
+  const ad = ADS.find((a) => a.id === session.adId)
+  const reward = Number(rewardAmount) || ad.reward
+  session.completed = true
+  session.rewardAmount = reward
+  const user = db.users.find((u) => u.id === session.userId)
+  const newBalance = ledger.apply(db, user.id, reward, 'ad_reward', session.id, `Verified ${ad.brand} ad`)
+  user.coins = newBalance
+  db.transactions.unshift({
+    id: uid('tx'),
+    userId: user.id,
+    type: 'earn',
+    coins: reward,
+    usd: +(reward * USD_PER_COIN).toFixed(2),
+    description: `Watched ${ad.brand} ad (verified)`,
+    createdAt: new Date().toISOString(),
+  })
+  write(db)
+  res.json({ ok: true, credited: reward })
+})
+
+app.get('/api/kyc/config', auth, (_req, res) =>
+  res.json({ configured: kyc.configured(), status: req.user.kycStatus })
+)
+
+app.post('/api/kyc/start', auth, async (req, res) => {
+  try {
+    const result = await kyc.startVerification(req.user.id, req.user.email)
+    res.json(result)
+  } catch (err) {
+    res.status(err.message.includes('not configured') ? 503 : 502).json({ error: err.message })
+  }
+})
+
+app.post('/api/kyc/webhook', async (req, res) => {
+  const raw = req.body
+  if (!kyc.verifyWebhook(req.headers, raw)) {
+    return res.status(401).json({ error: 'Invalid webhook signature.' })
+  }
+  let event
+  try {
+    event = JSON.parse(raw.toString('utf8'))
+  } catch {
+    return res.status(400).json({ error: 'Invalid webhook body.' })
+  }
+  const attributes = event.data?.attributes || {}
+  const userId = attributes.reference_id
+  const status = attributes.status
+  if (!userId) return res.json({ received: true })
+
+  const db = read()
+  const user = db.users.find((u) => u.id === userId && u.role !== 'admin')
+  if (!user) return res.json({ received: true })
+  if (status === 'approved' || status === 'completed') user.kycStatus = 'verified'
+  else if (status === 'declined' || status === 'failed') user.kycStatus = 'rejected'
+  else user.kycStatus = 'pending'
+  write(db)
+  res.json({ received: true })
 })
 
 app.get('/api/transactions', auth, (req, res) => {
