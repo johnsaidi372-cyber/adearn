@@ -12,6 +12,8 @@ export default function AdModal({ ad, onClose, onClaimed }) {
   const [error, setError] = useState('')
   const [claiming, setClaiming] = useState(false)
   const [claimed, setClaimed] = useState(false)
+  const [verificationMode, setVerificationMode] = useState('demo')
+  const [rewardAmount, setRewardAmount] = useState(ad.reward)
   const endsAtRef = useRef(null)
   const startedRef = useRef(false)
   const closeTimerRef = useRef(null)
@@ -33,6 +35,8 @@ export default function AdModal({ ad, onClose, onClaimed }) {
       .then((data) => {
         if (cancelled) return
         setSessionId(data.sessionId)
+        setVerificationMode(data.verificationMode || 'demo')
+        setRewardAmount(data.reward || ad.reward)
         endsAtRef.current = Date.now() + data.duration * 1000
         setRemaining(data.duration)
       })
@@ -53,6 +57,24 @@ export default function AdModal({ ad, onClose, onClaimed }) {
   }, [sessionId])
 
   useEffect(() => {
+    if (verificationMode !== 'server' || !sessionId || claimed) return
+    const timer = setInterval(async () => {
+      try {
+        const status = await api.adSession(sessionId)
+        if (status.status === 'verified') {
+          clearInterval(timer)
+          setClaimed(true)
+          onClaimed({ awarded: status.reward || rewardAmount })
+          closeTimerRef.current = setTimeout(onClose, 1400)
+        }
+      } catch {
+        // Keep polling until the network callback arrives or the user closes the ad.
+      }
+    }, 1200)
+    return () => clearInterval(timer)
+  }, [verificationMode, sessionId, claimed, rewardAmount, onClaimed, onClose])
+
+  useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -62,7 +84,7 @@ export default function AdModal({ ad, onClose, onClaimed }) {
   const progress = 1 - remaining / ad.duration
 
   async function claim() {
-    if (!ready || claiming) return
+    if (!ready || claiming || verificationMode === 'server') return
     setClaiming(true)
     setError('')
     try {
@@ -143,7 +165,7 @@ export default function AdModal({ ad, onClose, onClaimed }) {
               <div>
                 <p className="text-lg font-extrabold text-ink">Reward claimed!</p>
                 <p className="mt-1 text-sm text-slate-500">
-                  {coins(ad.reward)} coins · {usd(ad.reward / 100)} added to your balance.
+                  {coins(rewardAmount)} coins · {usd(rewardAmount / 100)} added to your balance.
                 </p>
               </div>
             </div>
@@ -177,10 +199,12 @@ export default function AdModal({ ad, onClose, onClaimed }) {
                   <span className="text-sm font-bold text-ink">Your reward</span>
                 </div>
                 <p className="mt-1 text-2xl font-extrabold tracking-tight text-brand-600">
-                  +{coins(ad.reward)} coins <span className="text-base font-semibold text-slate-400">≈ {usd(ad.reward / 100)}</span>
+                  +{coins(rewardAmount)} coins <span className="text-base font-semibold text-slate-400">≈ {usd(rewardAmount / 100)}</span>
                 </p>
                 <p className="mt-2 flex items-center justify-center gap-1.5 text-xs text-slate-500 sm:justify-start">
-                  {ready ? (
+                  {verificationMode === 'server' && ready ? (
+                    <><ShieldCheck className="h-3.5 w-3.5 text-brand-500" /> Waiting for ad network verification…</>
+                  ) : ready ? (
                     <><Sparkles className="h-3.5 w-3.5 text-emerald-500" /> Ad complete — claim your reward.</>
                   ) : (
                     <><Clock className="h-3.5 w-3.5" /> Keep watching to unlock the reward.</>
@@ -190,10 +214,12 @@ export default function AdModal({ ad, onClose, onClaimed }) {
 
               <button
                 onClick={claim}
-                disabled={!ready || claiming}
+                disabled={!ready || claiming || verificationMode === 'server'}
                 className="btn-primary w-full shrink-0 sm:w-auto"
               >
-                {claiming ? (
+                {verificationMode === 'server' && ready ? (
+                  <><ShieldCheck className="h-4 w-4" /> Verifying…</>
+                ) : claiming ? (
                   <><Loader2 className="h-4 w-4 animate-spin" /> Claiming…</>
                 ) : ready ? (
                   <><Zap className="h-4 w-4" fill="currentColor" /> Claim reward</>
@@ -209,7 +235,10 @@ export default function AdModal({ ad, onClose, onClaimed }) {
           )}
 
           <p className="mt-5 flex items-center justify-center gap-1.5 text-[11px] text-slate-400">
-            <ShieldCheck className="h-3.5 w-3.5" /> Demo advertisement · no real advertiser content
+            <ShieldCheck className="h-3.5 w-3.5" />
+            {verificationMode === 'server'
+              ? 'Advertiser content supplied by the configured ad network'
+              : 'Demo advertisement · no real advertiser content'}
           </p>
         </div>
       </div>
