@@ -41,4 +41,13 @@ export const api = {
   withdrawals: () => request('/withdrawals'),
   requestWithdrawal: (payload) =>
     request('/withdrawals', { method: 'POST', body: JSON.stringify(payload) }),
+  adminOverview: () => request('/admin/overview'),
+  adminUsers: () => request('/admin/users'),
+  adminUserActivity: (id) => request(`/admin/users/${id}/activity`),
+  adminWithdrawals: () => request('/admin/withdrawals'),
+  adminSetWithdrawalStatus: (id, status) =>
+    request(`/admin/withdrawals/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
 }
