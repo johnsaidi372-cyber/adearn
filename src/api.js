@@ -59,4 +59,8 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ status }),
     }),
+  adsConfig: () => request('/ads/config'),
+  adSession: (id) => request(`/ads/session/${id}`),
+  kycConfig: () => request('/kyc/config'),
+  startKyc: () => request('/kyc/start', { method: 'POST' }),
 }
