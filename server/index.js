@@ -148,6 +148,7 @@ function publicUser(user) {
     coins: user.coins,
     createdAt: user.createdAt,
     verificationFeePaid: !!user.verificationFeePaid,
+    role: user.role || 'user',
   }
 }
 
@@ -169,6 +170,18 @@ function auth(req, res, next) {
   req.user = user
   req.db = db
   next()
+}
+
+function requireAdmin(req, res, next) {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required.' })
+  next()
+}
+
+function activityFor(db, userId) {
+  return {
+    transactions: db.transactions.filter((t) => t.userId === userId),
+    withdrawals: db.withdrawals.filter((w) => w.userId === userId),
+  }
 }
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, time: new Date().toISOString() }))
@@ -349,6 +362,71 @@ app.post('/api/withdrawals', auth, (req, res) => {
     coins: user.coins,
     feeCharged: feeApplies ? VERIFICATION_FEE_USD : 0,
   })
+})
+
+// --- Admin endpoints ---
+
+app.get('/api/admin/overview', auth, requireAdmin, (req, res) => {
+  const db = req.db
+  const users = db.users.filter((u) => u.role !== 'admin')
+  res.json({
+    users: users.length,
+    totalCoins: users.reduce((sum, u) => sum + u.coins, 0),
+    totalEarnedUsd: +(
+      db.transactions.filter((t) => t.type === 'earn').reduce((sum, t) => sum + t.usd, 0)
+    ).toFixed(2),
+    totalWithdrawnUsd: +(
+      db.transactions.filter((t) => t.type === 'withdraw').reduce((sum, t) => sum + Math.abs(t.usd), 0)
+    ).toFixed(2),
+    adsWatched: db.adSessions.filter((s) => s.completed).length,
+    pendingWithdrawals: db.withdrawals.filter((w) => w.status === 'pending').length,
+    feeCollectedUsd: +(db.transactions.filter((t) => t.type === 'fee').length * VERIFICATION_FEE_USD).toFixed(2),
+  })
+})
+
+app.get('/api/admin/users', auth, requireAdmin, (req, res) => {
+  const db = req.db
+  res.json(
+    db.users
+      .filter((u) => u.role !== 'admin')
+      .map((u) => ({
+        ...publicUser(u),
+        totalEarnedCoins: db.transactions
+          .filter((t) => t.userId === u.id && t.type === 'earn')
+          .reduce((sum, t) => sum + t.coins, 0),
+        adsWatched: db.adSessions.filter((s) => s.userId === u.id && s.completed).length,
+        withdrawals: db.withdrawals.filter((w) => w.userId === u.id).length,
+      }))
+  )
+})
+
+app.get('/api/admin/users/:id/activity', auth, requireAdmin, (req, res) => {
+  const db = req.db
+  const user = db.users.find((u) => u.id === req.params.id && u.role !== 'admin')
+  if (!user) return res.status(404).json({ error: 'User not found.' })
+  res.json({ user: publicUser(user), ...activityFor(db, user.id) })
+})
+
+app.get('/api/admin/withdrawals', auth, requireAdmin, (req, res) => {
+  const db = req.db
+  res.json(
+    db.withdrawals.map((w) => {
+      const user = db.users.find((u) => u.id === w.userId)
+      return { ...w, userName: user?.name || 'Unknown', userEmail: user?.email || '' }
+    })
+  )
+})
+
+app.patch('/api/admin/withdrawals/:id/status', auth, requireAdmin, (req, res) => {
+  const status = req.body?.status
+  if (!['pending', 'paid', 'rejected'].includes(status)) {
+    return res.status(400).json({ error: 'Status must be pending, paid, or rejected.' })
+  }
+  const withdrawal = req.db.withdrawals.find((w) => w.id === req.params.id)
+  if (!withdrawal) return res.status(404).json({ error: 'Withdrawal not found.' })
+  withdrawal.status = status
+  write(req.db)
+  res.json({ withdrawal })
 })
 
 // Serve the production build when it exists.
